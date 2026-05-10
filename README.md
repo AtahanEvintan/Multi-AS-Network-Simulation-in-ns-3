@@ -1,122 +1,228 @@
-# GoogleInOneDay — Web Crawler & Search Engine
+# Multi-AS Network Simulation in ns-3
 
-A concurrent web crawler and real-time search engine built in Python, featuring asyncio-driven crawling, SQLite WAL persistence, relevance search with long-polling updates, and a premium dark-theme web dashboard.
+**Student:** Atahan Evintan  
+**Student No:** 820230334  
+**Course:** Computer Networks  
+**Date:** May 2026
 
-## Features
+---
 
-- **Concurrent BFS Crawler** — Asyncio-powered multi-stage pipeline (Frontier → Fetch → Parse → Index) with configurable depth, rate limiting, and concurrency control
-- **Relevance Search** — Relevance keyword search with title boost, AND semantics for multi-term queries, and live result updates via long-polling
-- **Backpressure Controls** — Token-bucket rate limiter, asyncio.Semaphore concurrency cap, and bounded queue depth prevent system overload
-- **Crash-Safe Persistence** — SQLite WAL mode with transactions ensures no data loss on interruption; crawls resume automatically
-- **Premium Web Dashboard** — Dark-theme glassmorphism UI with live metrics, job management, and real-time search
-- **Live Log Stream** — Auto-scrolling terminal UI streams crawler activity, discoveries, and HTTP rate limits per job in real-time
-- **Multiple Concurrent Jobs** — Run several crawls simultaneously with independent backpressure controls
-- **Pause/Resume/Stop** — Full job lifecycle management from the UI or CLI
+## 📖 Overview
 
-## Quick Start
+This project implements a parametric **Multi-Autonomous System (Multi-AS) network simulation** using the **ns-3 network simulator (v3.42)**. The simulation models three interconnected Autonomous Systems in a **full-mesh topology**, evaluates network performance across 6 different scenarios, and includes a **node failure and recovery** scenario to test OSPF-like intra-AS reconvergence.
+
+---
+
+## 🗺️ Topology Design
+
+### Inter-AS: Full Mesh
+Unlike a typical chain topology (AS1→AS2→AS3), all three AS pairs are **directly connected**:
+
+```
+        AS2
+       /    \
+     AS1 -- AS3
+```
+
+Each pair has:
+- **Primary link:** 1 Gbps / 5 ms
+- **Backup link:** 100 Mbps / 15 ms
+
+### Intra-AS: Ring + Mesh Hybrid
+Each AS contains:
+- **3 Border Routers (BR0, BR1, BR2)** arranged in a triangle
+- **Internal routers** connected in a ring with cross-links and BR spokes
+- Multiple redundant paths between every BR pair
+
+### Inter-AS Link Table
+
+| Endpoints | Bandwidth | Delay | Role |
+|-----------|-----------|-------|------|
+| AS1-BR0 ↔ AS2-BR0 | 1 Gbps | 5 ms | AS1–AS2 Primary |
+| AS1-BR1 ↔ AS2-BR1 | 100 Mbps | 15 ms | AS1–AS2 Backup |
+| AS2-BR0 ↔ AS3-BR0 | 1 Gbps | 5 ms | AS2–AS3 Primary |
+| AS2-BR2 ↔ AS3-BR2 | 100 Mbps | 15 ms | AS2–AS3 Backup |
+| AS1-BR2 ↔ AS3-BR0 | 1 Gbps | 5 ms | AS1–AS3 Primary (Full Mesh) |
+| AS1-BR0 ↔ AS3-BR2 | 100 Mbps | 15 ms | AS1–AS3 Backup (Full Mesh) |
+
+### IP Addressing
+
+| Block | Assignment |
+|-------|-----------|
+| 10.1.0.0/16 | AS1 intra-AS links (/30 subnets) |
+| 10.2.0.0/16 | AS2 intra-AS links (/30 subnets) |
+| 10.3.0.0/16 | AS3 intra-AS links (/30 subnets) |
+| 172.16.0.0/24 | Inter-AS links (sequential /30 subnets) |
+
+---
+
+## 🔀 Routing Structure
+
+### Intra-AS: OSPF-like Shortest-Path
+- Uses `Ipv4GlobalRouting` (Dijkstra-based SPF)
+- Installed via `Ipv4GlobalRoutingHelper::PopulateRoutingTables()`
+- Analogous to OSPF domain-wide LSA synchronisation and SPF computation
+- Ring+mesh topology guarantees multiple vertex-disjoint paths between every BR pair
+
+### Inter-AS: BGP-like Reachability
+- Same `Ipv4GlobalRouting` engine extended across all three ASes
+- Dijkstra discovers shortest paths across AS boundaries automatically
+- Full-mesh topology provides direct AS1↔AS3 path without mandatory AS2 transit
+- Analogous to BGP providing inter-domain reachability
+
+### Failure Scenario: Internal Node Failure
+- **t = 20s:** AS2 internal router (node index 3) goes DOWN via `Ipv4::SetDown()`
+- **t = 20s + Uniform[0.5, 2.0]s:** OSPF reconvergence delay, then `RecomputeRoutingTables()`
+- **t = 45s:** Node recovers via `Ipv4::SetUp()`, routing tables recomputed
+- Ring topology provides bypass paths that activate within the convergence window
+
+---
+
+## 📊 Experimental Scenarios
+
+6 scenarios × 3 RNG seeds = **18 total simulation runs**
+
+| ID | Nodes | Distribution | AS1 | AS2 | AS3 | Flows |
+|----|-------|-------------|-----|-----|-----|-------|
+| S1 | 20 | Balanced | 7 | 7 | 6 | 6 |
+| S2 | 20 | Unbalanced | 4 | 7 | 9 | 6 |
+| S3 | 50 | Balanced | 17 | 17 | 16 | 9 |
+| S4 | 50 | Unbalanced | 10 | 18 | 22 | 9 |
+| S5 | 100 | Balanced | 34 | 34 | 32 | 14 |
+| S6 | 100 | Unbalanced | 20 | 35 | 45 | 14 |
+
+**Distribution strategies:**
+- **Balanced:** ~equal split (ceil(N/3) per AS)
+- **Unbalanced:** 20% / 35% / 45% split across AS1 / AS2 / AS3
+
+**3 runs per scenario** with seeds 2, 3, 4 for statistical reliability and variance analysis.
+
+---
+
+## 📈 Results Summary
+
+| Nodes | Distribution | Delay (ms) | Tput (Mbps) | Loss (%) | Conv. (s) |
+|-------|-------------|-----------|------------|---------|----------|
+| 20 | Balanced | 13.87 | 4.06 | 0.31 | 1.14 |
+| 20 | Unbalanced | 18.17 | 4.06 | 0.33 | 1.14 |
+| 50 | Balanced | 24.63 | 4.75 | 0.00 | 1.14 |
+| 50 | Unbalanced | 23.75 | 4.52 | 0.23 | 1.14 |
+| 100 | Balanced | 30.37 | 4.60 | 3.13 | 1.14 |
+| 100 | Unbalanced | 30.75 | 4.43 | 0.14 | 1.14 |
+
+**Key findings:**
+- Delay grows sub-linearly with node count; inter-AS fixed cost (5ms/hop) dominates at small N
+- Throughput stays near 5 Mbps target — inter-AS links never saturated
+- Packet loss is near zero except during the failure window at t=20s
+- Convergence time is flat at ~1.14s — governed by protocol timer, not topology size
+- Unbalanced distribution increases delay at small N but converges at large N
+
+---
+
+## 📁 Repository Structure
+
+```
+.
+├── multi_as_sim.cc          ← ns-3 C++ simulation (single file, all scenarios)
+├── aggregate_results.py     ← Python analysis script (plots + summary table)
+├── run_all_scenarios.sh     ← Shell script to run all 18 scenarios
+├── README.md                ← This file
+├── results/
+│   ├── summary.csv          ← Aggregated metrics (all 18 runs)
+│   ├── flows_*.csv          ← Per-flow metrics for every run
+│   └── analysis/
+│       ├── delay.png
+│       ├── throughput.png
+│       ├── packet_loss.png
+│       └── convergence.png
+└── netanim/
+    └── anim_*.xml           ← NetAnim animation files (all 18 runs)
+```
+
+---
+
+## 🚀 Reproducing the Simulation
 
 ### Prerequisites
-- Python 3.11+
-- pip
+- macOS 13+ on Apple Silicon (arm64) or Linux
+- ns-3.42 (`ns-allinone-3.42`)
+- NetAnim 3.109 built with Qt6
+- Python 3.x with pandas, matplotlib, numpy
 
 ### Installation
-
 ```bash
-git clone https://github.com/yourusername/GoogleInOneDay-Crawler2.git
-cd GoogleInOneDay-Crawler2
-pip install -r requirements.txt
+# Download ns-3.42
+curl -LO https://www.nsnam.org/releases/ns-allinone-3.42.tar.bz2
+tar xjf ns-allinone-3.42.tar.bz2
+cd ns-allinone-3.42/ns-3.42
+./ns3 configure --enable-examples
+./ns3 build
+
+# Build NetAnim
+cd ../netanim-3.109
+qmake NetAnim.pro
+make -j4
 ```
 
-### Start the Dashboard
-
+### Running Simulations
 ```bash
-python main.py serve
+cd ~/ns-allinone-3.42/ns-3.42
+cp multi_as_sim.cc scratch/
+
+# Single scenario test
+./ns3 run "multi_as_sim --nodes=20 --dist=balanced --runId=1 --seed=2 --outDir=/tmp/results"
+
+# All 18 scenarios
+for nodes in 20 50 100; do
+  for dist in balanced unbalanced; do
+    for run in 1 2 3; do
+      seed=$((run + 1))
+      ./ns3 run "multi_as_sim --nodes=$nodes --dist=$dist \
+        --scenarioId=${nodes}_${dist} --runId=$run \
+        --seed=$seed --outDir=~/multi_as_results"
+    done
+  done
+done
 ```
 
-Open **http://localhost:3600** in your browser.
-
-### CLI Usage
-
+### Generating Analysis Plots
 ```bash
-# Headless crawl
-python main.py crawl https://quotes.toscrape.com --depth 2 --rate 5
-
-# Search from CLI
-python main.py search "life"
-
-# List all jobs
-python main.py jobs
+pip3 install pandas matplotlib numpy
+python3 aggregate_results.py --resultsDir ~/multi_as_results
 ```
 
-## Architecture
-
-```
-GoogleInOneDay-Crawler2/
-├── crawler/              # Core engine
-│   ├── db.py             # SQLite WAL — schema, CRUD, index versioning
-│   ├── fetcher.py        # Async HTTP client, rate limiter, semaphore
-│   ├── parser.py         # html.parser — link/text extraction, tokenizer
-│   ├── engine.py         # BFS pipeline — index(origin, k)
-│   └── search.py         # TF-IDF search — search(query) + long-poll
-├── server/
-│   └── app.py            # aiohttp web server — API + static serving
-├── static/               # Premium dark-theme dashboard
-│   ├── index.html
-│   ├── style.css
-│   └── app.js
-├── main.py               # CLI entry point
-├── product_prd.md        # Product requirements document
-├── recommendation.md     # Production deployment recommendations
-├──requirements.txt      # aiohttp (single external dependency)
-└── export_data.py        # Export indexed data to data/storage/p.data
+### Visualising with NetAnim
+```bash
+~/ns-allinone-3.42/netanim-3.109/NetAnim &
+# File → Open XML → select any anim_*.xml
+# Red nodes = Border Routers | Blue nodes = Internal routers
+# t=20s: AS2 internal node fails
+# t=45s: Node recovers
 ```
 
-### How It Works
+### Command-Line Flags
 
-1. **Crawler** receives a seed URL and depth `k`. It performs BFS, fetching pages concurrently via asyncio, parsing HTML with stdlib `html.parser`, and indexing tokens into SQLite.
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--nodes` | 20 | Total node count (20/50/100) |
+| `--dist` | balanced | balanced or unbalanced |
+| `--runId` | 1 | Run index (used in filenames) |
+| `--seed` | 1 | RNG seed |
+| `--simTime` | 60.0 | Simulation duration (s) |
+| `--failureTime` | 20.0 | When AS2 internal node fails |
+| `--recoveryOffset` | 25.0 | Seconds after failure to recover |
+| `--outDir` | results | Output directory |
+| `--noFailure` | false | Skip failure injection |
 
-2. **Backpressure** operates at three levels: token-bucket rate limiter (req/sec), asyncio.Semaphore (max concurrent HTTP requests), and bounded asyncio.Queue (max pending URLs).
+---
 
-3. **Search** tokenizes the query, looks up the inverted index (`index_tokens` table), computes relevance scores, and returns `(url, origin_url, depth)` triples ranked by relevance.
+## 🛠️ Environment
 
-4. **Long-polling** uses `threading.Condition`: the indexer calls `notify_all()` after each batch commit, waking search clients who re-run their query against fresh data.
-
-5. **Persistence** uses SQLite WAL mode: concurrent reads (search) never block writes (indexing). On interruption, pending URLs stay in the queue table for automatic resumption.
-
-6. **Export** uses `export_data.py` to export indexed data to `data/storage/p.data` for offline analysis.
-
-6. **Export** uses `export_data.py` to export indexed data to `data/storage/p.data` for offline analysis.
-
-## API Endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/crawl` | Start a crawl `{"origin": "url", "depth": N}` |
-| GET | `/api/jobs` | List all jobs |
-| GET | `/api/jobs/{id}` | Job status |
-| POST | `/api/jobs/{id}/pause` | Pause a job |
-| POST | `/api/jobs/{id}/resume` | Resume a job |
-| POST | `/api/jobs/{id}/stop` | Stop a job |
-| GET | `/api/status` | Global system stats |
-| GET | `/api/search?q=...` | Search indexed pages |
-| GET | `/api/updates?q=...&last_version=V` | Long-poll for updates |
-| GET | `/api/random-word` | Random indexed word |
-
-## Configuration
-
-| Parameter | Default | Description |
-|---|---|---|
-| `--port` | 3600 | Web server port |
-| `--depth` | 2 | Max crawl depth |
-| `--rate` | 10 | Requests per second |
-| `--concurrent` | 20 | Max simultaneous HTTP requests |
-| `max_queue` | 10000 | Max URLs in frontier queue |
-
-## Dependencies
-
-- **aiohttp** — async HTTP client + web server (single external dependency)
-- Everything else uses Python standard library: `sqlite3`, `html.parser`, `urllib.parse`, `asyncio`, `threading`, `json`, `re`, `hashlib`, `logging`
-
-## License
-
-MIT
+| Component | Version |
+|-----------|---------|
+| ns-3 | 3.42 |
+| NetAnim | 3.109 |
+| Qt | 6 (Homebrew) |
+| macOS | 14.5 (Apple Silicon M1) |
+| Python | 3.12 |
+| Compiler | AppleClang 15.0 |
