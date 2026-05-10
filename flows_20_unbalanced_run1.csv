@@ -1,0 +1,8 @@
+scenarioId,runId,totalNodes,dist,flowId,srcIP,dstIP,txPkts,rxPkts,delay_ms,throughput_mbps,loss_pct
+20_unbalanced,1,20,unbalanced,1,10.1.0.18,10.2.0.14,34790,34790,19.2530,5.1351,0.0000
+20_unbalanced,1,20,unbalanced,2,10.1.0.14,10.3.0.14,34790,34790,21.3373,5.1349,0.0000
+20_unbalanced,1,20,unbalanced,3,10.2.0.45,10.3.0.26,34790,34790,21.3373,5.1349,0.0000
+20_unbalanced,1,20,unbalanced,4,10.2.0.25,10.1.0.14,20184,19530,11.2614,2.8831,3.2402
+20_unbalanced,1,20,unbalanced,5,10.3.0.38,10.2.0.14,34790,34790,11.2614,5.1359,0.0000
+20_unbalanced,1,20,unbalanced,6,10.3.0.22,10.1.0.14,34790,34790,21.3373,5.1349,0.0000
+20_unbalanced,1,20,unbalanced,7,10.2.0.45,10.1.0.14,14606,14606,21.4216,5.1325,0.0000
